@@ -1,0 +1,83 @@
+<mah:MetroWindow x:Class="SroNexus.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:local="clr-namespace:SroNexus"
+        mc:Ignorable="d"
+        Title="SroNexus - Ultimate Silkroad Online Emulator Manager"
+        Height="900" Width="1600"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
+        Icon="Resources/SroNexus.ico"
+        GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+        NonActiveGlowBrush="{DynamicResource MahApps.Brushes.Gray7}">
+
+    <mah:MetroWindow.LeftWindowCommands>
+        <mah:WindowCommands>
+            <Button Content="🚀 SroNexus v1.0" />
+        </mah:WindowCommands>
+    </mah:MetroWindow.LeftWindowCommands>
+
+    <mah:MetroWindow.RightWindowCommands>
+        <mah:WindowCommands>
+            <Button Content="Settings" Click="Settings_Click"/>
+            <Button Content="Help" Click="Help_Click"/>
+        </mah:WindowCommands>
+    </mah:MetroWindow.RightWindowCommands>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="25"/>
+        </Grid.RowDefinitions>
+
+        <!-- Main Navigation -->
+        <materialDesign:ColorZone Grid.Row="0" Mode="PrimaryMid" Padding="10">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="DashboardTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" IsChecked="True" Content="DASHBOARD" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="ItemsTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="ITEMS" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="MonstersTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="MONSTERS" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="SkillsTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="SKILLS" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="ScrollsTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="SCROLLS" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="FeaturesTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="FEATURES" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="ImportExportTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="IMPORT/EXPORT" Click="NavigationTab_Click"/>
+                    <RadioButton x:Name="ServerTab" Style="{StaticResource MaterialDesignTabRadioButton}" 
+                                 Margin="4" Content="SERVER" Click="NavigationTab_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </materialDesign:ColorZone>
+
+        <!-- Content Area -->
+        <Frame Grid.Row="1" x:Name="MainFrame" NavigationUIVisibility="Hidden"/>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2" Background="{DynamicResource MahApps.Brushes.Accent}">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready" Foreground="White"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <TextBlock x:Name="DatabaseStatus" Text="Database: Connected" Foreground="White"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <TextBlock x:Name="ServerStatus" Text="Server: Offline" Foreground="White"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="© 2024 SroNexus Team" Foreground="White"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</mah:MetroWindow>
