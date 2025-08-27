@@ -20,6 +20,8 @@ namespace SroNexus
         private Process? _agentServerProcess;
         private Process? _gatewayServerProcess;
         private Process? _masterServerProcess;
+        private Process? _monolithProcess;
+        private bool _isMonolithMode = false;
         
         private readonly Dictionary<string, bool> _features = new();
         private bool _isRunning = false;
@@ -149,6 +151,7 @@ namespace SroNexus
                         return false;
                     }
                     
+                    _isMonolithMode = true;
                     _isRunning = true;
                     _logger.Information("SroNexusServer monolith started successfully!");
                     
@@ -227,13 +230,13 @@ namespace SroNexus
                     }
                 };
 
-                _masterServerProcess.OutputDataReceived += (sender, e) =>
+                _monolithProcess.OutputDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                         _logger.Debug("[SroNexusServer] {Output}", e.Data);
                 };
 
-                _masterServerProcess.ErrorDataReceived += (sender, e) =>
+                _monolithProcess.ErrorDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                         _logger.Error("[SroNexusServer] {Error}", e.Data);
@@ -444,6 +447,22 @@ namespace SroNexus
             {
                 _logger.Information("Stopping all servers...");
                 
+                if (_isMonolithMode)
+                {
+                    if (_monolithProcess != null && !_monolithProcess.HasExited)
+                    {
+                        _monolithProcess.Kill();
+                        await _monolithProcess.WaitForExitAsync();
+                        _monolithProcess.Dispose();
+                        _monolithProcess = null;
+                        _logger.Information("SroNexusServer stopped");
+                    }
+                    _isMonolithMode = false;
+                    _isRunning = false;
+                    _logger.Information("All servers stopped");
+                    return;
+                }
+
                 // Stop AgentServer
                 if (_agentServerProcess != null && !_agentServerProcess.HasExited)
                 {
@@ -499,6 +518,9 @@ namespace SroNexus
         /// </summary>
         public bool AreServersRunning()
         {
+            if (_isMonolithMode)
+                return _isRunning && _monolithProcess != null && !_monolithProcess.HasExited;
+
             return _isRunning && 
                    _masterServerProcess != null && !_masterServerProcess.HasExited &&
                    _gatewayServerProcess != null && !_gatewayServerProcess.HasExited &&
@@ -510,6 +532,17 @@ namespace SroNexus
         /// </summary>
         public ServerStatus GetServerStatus()
         {
+            if (_isMonolithMode)
+            {
+                return new ServerStatus
+                {
+                    MonolithRunning = _monolithProcess != null && !_monolithProcess.HasExited,
+                    MonolithPID = _monolithProcess?.Id ?? 0,
+                    EnabledFeatures = _features.Count(f => f.Value),
+                    TotalFeatures = _features.Count
+                };
+            }
+
             return new ServerStatus
             {
                 MasterServerRunning = _masterServerProcess != null && !_masterServerProcess.HasExited,
@@ -553,12 +586,19 @@ namespace SroNexus
 
     public class ServerStatus
     {
+        // Monolith mode
+        public bool MonolithRunning { get; set; }
+        public int MonolithPID { get; set; }
+
+        // Legacy mode
         public bool MasterServerRunning { get; set; }
         public bool GatewayServerRunning { get; set; }
         public bool AgentServerRunning { get; set; }
         public int MasterServerPID { get; set; }
         public int GatewayServerPID { get; set; }
         public int AgentServerPID { get; set; }
+
+        // Features
         public int EnabledFeatures { get; set; }
         public int TotalFeatures { get; set; }
     }
