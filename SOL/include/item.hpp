@@ -27,7 +27,7 @@
 #include "item_types.hpp"
 
 #include <vector>
-#include <boost/array.hpp>
+#include <array>
 #include <boost/shared_ptr.hpp>
 
 enum
