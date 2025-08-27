@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 
@@ -142,22 +143,31 @@ namespace SroNexus
                 _logger.Information("Starting servers...");
                 
                 // Prefer the new unified monolith if present
+                // Try dev layout first: ../SroNexusServer/SroNexusServer.exe
                 var monolithPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "SroNexusServer", "SroNexusServer.exe");
+                // Fallback to installed layout: BaseDirectory/SroNexusServer.exe
+                if (!File.Exists(monolithPath))
+                {
+                    var altMonolith = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SroNexusServer.exe");
+                    if (File.Exists(altMonolith))
+                        monolithPath = altMonolith;
+                }
                 if (File.Exists(monolithPath))
                 {
                     if (!await StartMonolith(monolithPath))
                     {
-                        _logger.Error("Failed to start SroNexusServer monolith");
-                        return false;
+                        _logger.Warning("Monolith failed to start. Falling back to legacy servers.");
                     }
-                    
-                    _isMonolithMode = true;
-                    _isRunning = true;
-                    _logger.Information("SroNexusServer monolith started successfully!");
-                    
-                    // Apply feature configurations
-                    await ApplyFeatureConfigurations();
-                    return true;
+                    else
+                    {
+                        _isMonolithMode = true;
+                        _isRunning = true;
+                        _logger.Information("SroNexusServer monolith started successfully!");
+                        
+                        // Apply feature configurations
+                        await ApplyFeatureConfigurations();
+                        return true;
+                    }
                 }
 
                 // Fallback to legacy tri-server startup
@@ -216,7 +226,7 @@ namespace SroNexus
                     _logger.Warning("Config not found at {Path}. The server will use defaults.", configPath);
                 }
 
-                _masterServerProcess = new Process
+                _monolithProcess = new Process
                 {
                     StartInfo = new ProcessStartInfo
                     {
@@ -246,7 +256,7 @@ namespace SroNexus
                 _masterServerProcess.BeginOutputReadLine();
                 _masterServerProcess.BeginErrorReadLine();
 
-                _logger.Information("SroNexusServer started with PID {PID}", _masterServerProcess.Id);
+                _logger.Information("SroNexusServer started with PID {PID}", _monolithProcess.Id);
                 return await Task.FromResult(true);
             }
             catch (Exception ex)
