@@ -131,14 +131,35 @@ namespace SroNexus
         }
 
         /// <summary>
-        /// Start all eSRO servers
+        /// Start servers (prefer unified SroNexusServer if available)
         /// </summary>
         public async Task<bool> StartAllServers()
         {
             try
             {
-                _logger.Information("Starting all eSRO servers...");
+                _logger.Information("Starting servers...");
                 
+                // Prefer the new unified monolith if present
+                var monolithPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "SroNexusServer", "SroNexusServer.exe");
+                if (File.Exists(monolithPath))
+                {
+                    if (!await StartMonolith(monolithPath))
+                    {
+                        _logger.Error("Failed to start SroNexusServer monolith");
+                        return false;
+                    }
+                    
+                    _isRunning = true;
+                    _logger.Information("SroNexusServer monolith started successfully!");
+                    
+                    // Apply feature configurations
+                    await ApplyFeatureConfigurations();
+                    return true;
+                }
+
+                // Fallback to legacy tri-server startup
+                _logger.Warning("SroNexusServer.exe not found. Falling back to legacy servers.");
+
                 // Start MasterServer first
                 if (!await StartMasterServer())
                 {
@@ -167,7 +188,7 @@ namespace SroNexus
                 }
                 
                 _isRunning = true;
-                _logger.Information("All servers started successfully!");
+                _logger.Information("All servers started successfully (legacy mode).");
                 
                 // Apply feature configurations
                 await ApplyFeatureConfigurations();
@@ -177,6 +198,57 @@ namespace SroNexus
             catch (Exception ex)
             {
                 _logger.Error(ex, "Error starting servers");
+                return false;
+            }
+        }
+
+        private async Task<bool> StartMonolith(string exePath)
+        {
+            try
+            {
+                // Compute config relative to the exe: ../SroNexusServer/config/sronexus.conf
+                var configPath = Path.Combine(Path.GetDirectoryName(exePath)!, "config", "sronexus.conf");
+                if (!File.Exists(configPath))
+                {
+                    _logger.Warning("Config not found at {Path}. The server will use defaults.", configPath);
+                }
+
+                _masterServerProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = exePath,
+                        Arguments = File.Exists(configPath) ? $"\"{configPath}\"" : "",
+                        WorkingDirectory = Path.GetDirectoryName(exePath),
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                _masterServerProcess.OutputDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        _logger.Debug("[SroNexusServer] {Output}", e.Data);
+                };
+
+                _masterServerProcess.ErrorDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        _logger.Error("[SroNexusServer] {Error}", e.Data);
+                };
+
+                _masterServerProcess.Start();
+                _masterServerProcess.BeginOutputReadLine();
+                _masterServerProcess.BeginErrorReadLine();
+
+                _logger.Information("SroNexusServer started with PID {PID}", _masterServerProcess.Id);
+                return await Task.FromResult(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to start SroNexusServer");
                 return false;
             }
         }

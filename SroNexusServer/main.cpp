@@ -4,6 +4,7 @@
 #include <map>
 #include <algorithm>
 #include <cstdlib>
+#include <windows.h>
 
 #include "modules/LoginModule.hpp"
 #include "modules/GameModule.hpp"
@@ -35,9 +36,20 @@ int main(int argc, char** argv) {
     std::cout << "SroNexusServer (Windows) starting..." << std::endl;
 
     // Load editable ports from config
-    std::string cfgPath = "config/sronexus.conf"; // forward slash works on Windows too
+    std::string cfgPath;
     if (argc >= 2) {
         cfgPath = argv[1];
+    } else {
+        // Resolve relative to executable dir: exeDir/config/sronexus.conf
+        char exePath[MAX_PATH] = {0};
+        if (GetModuleFileNameA(nullptr, exePath, MAX_PATH)) {
+            std::string exeDir = exePath;
+            auto pos = exeDir.find_last_of("\\/");
+            if (pos != std::string::npos) exeDir = exeDir.substr(0, pos);
+            cfgPath = exeDir + "/config/sronexus.conf";
+        } else {
+            cfgPath = "config/sronexus.conf";
+        }
     }
     std::map<std::string,std::string> cfg;
     if (!read_config_file(cfgPath, cfg)) {
