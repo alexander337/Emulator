@@ -10,4 +10,5 @@ add_subdirectory(SRNL)
 add_subdirectory(MasterServer)
 add_subdirectory(GatewayServer)
 add_subdirectory(AgentServer)
+add_subdirectory(SroNexusServer)
 
