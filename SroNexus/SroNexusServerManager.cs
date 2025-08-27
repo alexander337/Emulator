@@ -219,8 +219,8 @@ namespace SroNexus
         {
             try
             {
-                // Compute config relative to the exe: ../SroNexusServer/config/sronexus.conf
-                var configPath = Path.Combine(Path.GetDirectoryName(exePath)!, "config", "sronexus.conf");
+                // Compute config relative to the exe: ../SroNexusServer/config/sronexus.json
+                var configPath = Path.Combine(Path.GetDirectoryName(exePath)!, "config", "sronexus.json");
                 if (!File.Exists(configPath))
                 {
                     _logger.Warning("Config not found at {Path}. The server will use defaults.", configPath);

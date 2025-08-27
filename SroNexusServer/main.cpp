@@ -9,56 +9,65 @@
 #include "modules/LoginModule.hpp"
 #include "modules/GameModule.hpp"
 
-// Minimal key=value config loader for Windows
-static bool read_config_file(const std::string& filename, std::map<std::string,std::string>& entries) {
+// Minimal JSON parser for config: expects keys LoginPort and GamePort as integers
+static bool read_config_json(const std::string& filename, int& loginPort, int& gamePort) {
     std::ifstream file(filename.c_str());
     if (!file) {
-        std::cerr << "Config file not found: " << filename << std::endl;
         return false;
     }
-    std::string line;
-    size_t i = 0;
-    while (std::getline(file, line)) {
-        ++i;
-        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
-        // strip spaces
-        line.erase(std::remove(line.begin(), line.end(), ' '), line.end());
-        size_t pos = line.find('=');
-        if (pos == std::string::npos) continue;
-        std::string key = line.substr(0, pos);
-        std::string val = line.substr(pos+1);
-        entries[key] = val;
-    }
-    return true;
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    auto findInt = [&](const std::string& key, int& out)->bool {
+        std::string pattern = "\"" + key + "\"";
+        auto pos = content.find(pattern);
+        if (pos == std::string::npos) return false;
+        pos = content.find(':', pos);
+        if (pos == std::string::npos) return false;
+        // skip spaces and quotes
+        while (pos < content.size() && (content[pos] == ':' || content[pos] == ' ' || content[pos] == '\t' || content[pos] == '\"')) ++pos;
+        // read number (integers only)
+        std::string num;
+        while (pos < content.size() && isdigit(static_cast<unsigned char>(content[pos]))) {
+            num.push_back(content[pos]);
+            ++pos;
+        }
+        if (num.empty()) return false;
+        out = std::atoi(num.c_str());
+        return true;
+    };
+    int lp = loginPort, gp = gamePort;
+    bool foundAny = false;
+    if (findInt("LoginPort", lp)) { loginPort = lp; foundAny = true; }
+    if (findInt("GamePort", gp))  { gamePort  = gp; foundAny = true; }
+    return foundAny;
 }
 
 int main(int argc, char** argv) {
     std::cout << "SroNexusServer (Windows) starting..." << std::endl;
 
-    // Load editable ports from config
+    // Load editable ports from JSON config
     std::string cfgPath;
     if (argc >= 2) {
         cfgPath = argv[1];
     } else {
-        // Resolve relative to executable dir: exeDir/config/sronexus.conf
+        // Resolve relative to executable dir: exeDir/config/sronexus.json
         char exePath[MAX_PATH] = {0};
         if (GetModuleFileNameA(nullptr, exePath, MAX_PATH)) {
             std::string exeDir = exePath;
             auto pos = exeDir.find_last_of("\\/");
             if (pos != std::string::npos) exeDir = exeDir.substr(0, pos);
-            cfgPath = exeDir + "/config/sronexus.conf";
+            cfgPath = exeDir + "/config/sronexus.json";
         } else {
-            cfgPath = "config/sronexus.conf";
+            cfgPath = "config/sronexus.json";
         }
     }
-    std::map<std::string,std::string> cfg;
-    if (!read_config_file(cfgPath, cfg)) {
-        std::cout << "Config not found at '" << cfgPath << "', using defaults." << std::endl;
-    }
 
-    // Defaults if not set
-    int loginPort = cfg.count("LoginPort") ? std::atoi(cfg["LoginPort"].c_str()) : 15779;
-    int gamePort  = cfg.count("GamePort")  ? std::atoi(cfg["GamePort"].c_str())  : 15780;
+    // Defaults
+    int loginPort = 15779;
+    int gamePort  = 15780;
+
+    if (!read_config_json(cfgPath, loginPort, gamePort)) {
+        std::cout << "Config not found or invalid at '" << cfgPath << "', using defaults." << std::endl;
+    }
 
     std::cout << "Configured ports: Login=" << loginPort << " Game=" << gamePort << std::endl;
 

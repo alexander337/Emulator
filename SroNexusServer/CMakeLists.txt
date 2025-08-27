@@ -17,5 +17,5 @@ if (WIN32)
 
     # Install executable and default config
     install(TARGETS SroNexusServer RUNTIME DESTINATION bin)
-    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/config/sronexus.conf DESTINATION bin/config)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/config/sronexus.json DESTINATION bin/config)
 endif()
