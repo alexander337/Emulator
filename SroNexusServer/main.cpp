@@ -35,12 +35,14 @@ int main(int argc, char** argv) {
     std::cout << "SroNexusServer (Windows) starting..." << std::endl;
 
     // Load editable ports from config
-    std::string cfgPath = "config\\sronexus.conf";
+    std::string cfgPath = "config/sronexus.conf"; // forward slash works on Windows too
     if (argc >= 2) {
         cfgPath = argv[1];
     }
     std::map<std::string,std::string> cfg;
-    read_config_file(cfgPath, cfg);
+    if (!read_config_file(cfgPath, cfg)) {
+        std::cout << "Config not found at '" << cfgPath << "', using defaults." << std::endl;
+    }
 
     // Defaults if not set
     int loginPort = cfg.count("LoginPort") ? std::atoi(cfg["LoginPort"].c_str()) : 15779;
