@@ -1,6 +1,6 @@
 #pragma once
-#include &lt;string&gt;
-#include &lt;iostream&gt;
+#include <string>
+#include <iostream>
 
 class GameModule {
 public:
@@ -14,14 +14,14 @@ public:
 
     void Start() {
         m_running = true;
-        std::cout &lt;&lt; "[GameModule] Starting on port " &lt;&lt; m_port &lt;&lt; std::endl;
+        std::cout << "[GameModule] Starting on port " << m_port << std::endl;
         // TODO: start acceptors and state machines
     }
 
     void Stop() {
         if (!m_running) return;
         m_running = false;
-        std::cout &lt;&lt; "[GameModule] Stopped" &lt;&lt; std::endl;
+        std::cout << "[GameModule] Stopped" << std::endl;
         // TODO: stop io_service, close sockets
     }
 

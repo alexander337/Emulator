@@ -1,16 +1,18 @@
-#include &lt;iostream&gt;
-#include &lt;fstream&gt;
-#include &lt;string&gt;
-#include &lt;map&gt;
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <map>
+#include <algorithm>
+#include <cstdlib>
 
 #include "modules/LoginModule.hpp"
 #include "modules/GameModule.hpp"
 
 // Minimal key=value config loader for Windows
-static bool read_config_file(const std::string&amp; filename, std::map&lt;std::string,std::string&gt;&amp; entries) {
+static bool read_config_file(const std::string& filename, std::map<std::string,std::string>& entries) {
     std::ifstream file(filename.c_str());
     if (!file) {
-        std::cerr &lt;&lt; "Config file not found: " &lt;&lt; filename &lt;&lt; std::endl;
+        std::cerr << "Config file not found: " << filename << std::endl;
         return false;
     }
     std::string line;
@@ -19,7 +21,7 @@ static bool read_config_file(const std::string&amp; filename, std::map&lt;std::s
         ++i;
         if (line.empty() || line[0] == '#' || line[0] == ';') continue;
         // strip spaces
-        line.erase(remove(line.begin(), line.end(), ' '), line.end());
+        line.erase(std::remove(line.begin(), line.end(), ' '), line.end());
         size_t pos = line.find('=');
         if (pos == std::string::npos) continue;
         std::string key = line.substr(0, pos);
@@ -30,32 +32,32 @@ static bool read_config_file(const std::string&amp; filename, std::map&lt;std::s
 }
 
 int main(int argc, char** argv) {
-    std::cout &lt;&lt; "SroNexusServer (Windows) starting..." &lt;&lt; std::endl;
+    std::cout << "SroNexusServer (Windows) starting..." << std::endl;
 
     // Load editable ports from config
     std::string cfgPath = "config\\sronexus.conf";
-    if (argc &gt;= 2) {
+    if (argc >= 2) {
         cfgPath = argv[1];
     }
-    std::map&lt;std::string,std::string&gt; cfg;
+    std::map<std::string,std::string> cfg;
     read_config_file(cfgPath, cfg);
 
     // Defaults if not set
     int loginPort = cfg.count("LoginPort") ? std::atoi(cfg["LoginPort"].c_str()) : 15779;
     int gamePort  = cfg.count("GamePort")  ? std::atoi(cfg["GamePort"].c_str())  : 15780;
 
-    std::cout &lt;&lt; "Configured ports: Login=" &lt;&lt; loginPort &lt;&lt; " Game=" &lt;&lt; gamePort &lt;&lt; std::endl;
+    std::cout << "Configured ports: Login=" << loginPort << " Game=" << gamePort << std::endl;
 
     // Initialize modules (stubs for now)
     LoginModule login;
     GameModule game;
 
     if (!login.Initialize(loginPort)) {
-        std::cerr &lt;&lt; "LoginModule initialization failed" &lt;&lt; std::endl;
+        std::cerr << "LoginModule initialization failed" << std::endl;
         return 1;
     }
     if (!game.Initialize(gamePort)) {
-        std::cerr &lt;&lt; "GameModule initialization failed" &lt;&lt; std::endl;
+        std::cerr << "GameModule initialization failed" << std::endl;
         return 1;
     }
 
@@ -63,12 +65,12 @@ int main(int argc, char** argv) {
     login.Start();
     game.Start();
 
-    std::cout &lt;&lt; "SroNexusServer is running. Press Enter to stop." &lt;&lt; std::endl;
+    std::cout << "SroNexusServer is running. Press Enter to stop." << std::endl;
     std::cin.get();
 
     game.Stop();
     login.Stop();
 
-    std::cout &lt;&lt; "SroNexusServer stopped." &lt;&lt; std::endl;
+    std::cout << "SroNexusServer stopped." << std::endl;
     return 0;
 }
