@@ -4,6 +4,7 @@
 #include <map>
 #include <algorithm>
 #include <cstdlib>
+#include <cctype>
 #include <windows.h>
 
 #include "modules/LoginModule.hpp"
@@ -88,9 +89,11 @@ int main(int argc, char** argv) {
     login.Start();
     game.Start();
 
-    std::cout << "SroNexusServer is running. Press Enter to stop." << std::endl;
-    std::cin.get();
+    std::cout << "SroNexusServer is running." << std::endl;
+    // Keep process alive when launched headless from the manager
+    Sleep(INFINITE);
 
+    // Unreachable in current scaffold; manager will Kill() the process.
     game.Stop();
     login.Stop();
 
