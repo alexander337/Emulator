@@ -150,6 +150,136 @@ bool SqlConnection::ExecuteQuery(const std::string& query, std::vector<std::vect
     return true;
 }
 
+bool SqlConnection::PrepareStatement(const std::string& query) {
+    if (!m_connected) {
+        m_lastError = "Not connected to database";
+        return false;
+    }
+    
+    // Free previous statement if exists
+    if (m_stmt != SQL_NULL_HSTMT) {
+        SQLFreeHandle(SQL_HANDLE_STMT, m_stmt);
+        m_stmt = SQL_NULL_HSTMT;
+    }
+    
+    // Allocate new statement handle
+    if (SQLAllocHandle(SQL_HANDLE_STMT, m_dbc, &m_stmt) != SQL_SUCCESS) {
+        SetError("Allocate statement", m_dbc, SQL_HANDLE_DBC);
+        return false;
+    }
+    
+    // Prepare the statement
+    SQLRETURN ret = SQLPrepare(m_stmt, (SQLCHAR*)query.c_str(), SQL_NTS);
+    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        SetError("Prepare statement", m_stmt, SQL_HANDLE_STMT);
+        return false;
+    }
+    
+    return true;
+}
+
+bool SqlConnection::BindParameter(int index, const std::string& value) {
+    if (m_stmt == SQL_NULL_HSTMT) {
+        m_lastError = "No prepared statement";
+        return false;
+    }
+    
+    SQLRETURN ret = SQLBindParameter(m_stmt, index, SQL_PARAM_INPUT, SQL_C_CHAR, 
+                                     SQL_VARCHAR, value.length(), 0, 
+                                     (SQLPOINTER)value.c_str(), value.length(), NULL);
+    
+    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        SetError("Bind string parameter", m_stmt, SQL_HANDLE_STMT);
+        return false;
+    }
+    
+    return true;
+}
+
+bool SqlConnection::BindParameter(int index, int value) {
+    if (m_stmt == SQL_NULL_HSTMT) {
+        m_lastError = "No prepared statement";
+        return false;
+    }
+    
+    SQLRETURN ret = SQLBindParameter(m_stmt, index, SQL_PARAM_INPUT, SQL_C_LONG,
+                                     SQL_INTEGER, 0, 0, &value, 0, NULL);
+    
+    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        SetError("Bind int parameter", m_stmt, SQL_HANDLE_STMT);
+        return false;
+    }
+    
+    return true;
+}
+
+bool SqlConnection::BindParameter(int index, double value) {
+    if (m_stmt == SQL_NULL_HSTMT) {
+        m_lastError = "No prepared statement";
+        return false;
+    }
+    
+    SQLRETURN ret = SQLBindParameter(m_stmt, index, SQL_PARAM_INPUT, SQL_C_DOUBLE,
+                                     SQL_DOUBLE, 0, 0, &value, 0, NULL);
+    
+    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        SetError("Bind double parameter", m_stmt, SQL_HANDLE_STMT);
+        return false;
+    }
+    
+    return true;
+}
+
+bool SqlConnection::ExecutePrepared() {
+    if (m_stmt == SQL_NULL_HSTMT) {
+        m_lastError = "No prepared statement";
+        return false;
+    }
+    
+    SQLRETURN ret = SQLExecute(m_stmt);
+    if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+        SetError("Execute prepared statement", m_stmt, SQL_HANDLE_STMT);
+        return false;
+    }
+    
+    return true;
+}
+
+bool SqlConnection::ExecutePreparedQuery(std::vector<std::vector<std::string>>& results) {
+    if (!ExecutePrepared()) {
+        return false;
+    }
+    
+    results.clear();
+    
+    // Get column count
+    SQLSMALLINT columns;
+    SQLNumResultCols(m_stmt, &columns);
+    
+    // Fetch results
+    while (SQLFetch(m_stmt) == SQL_SUCCESS) {
+        std::vector<std::string> row;
+        for (SQLSMALLINT i = 1; i <= columns; i++) {
+            SQLCHAR buf[256];
+            SQLLEN indicator;
+            SQLRETURN ret = SQLGetData(m_stmt, i, SQL_C_CHAR, buf, sizeof(buf), &indicator);
+            if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO) {
+                if (indicator == SQL_NULL_DATA) {
+                    row.push_back("NULL");
+                } else {
+                    row.push_back(std::string((char*)buf));
+                }
+            } else {
+                row.push_back("");
+            }
+        }
+        results.push_back(row);
+    }
+    
+    SQLFreeStmt(m_stmt, SQL_CLOSE);
+    return true;
+}
+
 void SqlConnection::SetError(const std::string& context, SQLHANDLE handle, SQLSMALLINT type) {
     SQLCHAR sqlstate[6];
     SQLCHAR message[256];

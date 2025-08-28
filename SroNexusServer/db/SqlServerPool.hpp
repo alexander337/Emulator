@@ -21,6 +21,14 @@ public:
     bool Execute(const std::string& query);
     bool ExecuteQuery(const std::string& query, std::vector<std::vector<std::string>>& results);
     
+    // Parameterized query support for security
+    bool PrepareStatement(const std::string& query);
+    bool BindParameter(int index, const std::string& value);
+    bool BindParameter(int index, int value);
+    bool BindParameter(int index, double value);
+    bool ExecutePrepared();
+    bool ExecutePreparedQuery(std::vector<std::vector<std::string>>& results);
+    
     std::string GetLastError() const { return m_lastError; }
     
 private:

@@ -101,29 +101,40 @@ bool LoginModule::ValidateCredentials(const std::string& username, const std::st
         }
     }
     
-    // Query database
+    // Query database using parameterized query to prevent SQL injection
     auto& dbPool = db::SqlServerPool::Instance();
-    std::vector<std::vector<std::string>> results;
+    auto conn = dbPool.GetConnection();
+    if (!conn) {
+        LogError("Failed to get database connection");
+        return false;
+    }
     
-    std::stringstream query;
-    query << "SELECT id, password, access_level FROM accounts WHERE username = '" 
-          << username << "'";
+    // Use parameterized query for security
+    const std::string query = "SELECT id, password, access_level FROM accounts WHERE username = ?";
     
-    if (dbPool.ExecuteQuery(query.str(), results)) {
-        if (!results.empty() && results[0][1] == password) {
-            // Update cache
-            std::lock_guard<std::mutex> lock(m_authCacheMutex);
-            AuthCache cache;
-            cache.passwordHash = password;
-            cache.accountId = std::stoul(results[0][0]);
-            cache.accessLevel = std::stoul(results[0][2]);
-            cache.lastAccess = std::chrono::steady_clock::now();
-            m_authCache[username] = cache;
+    if (conn->PrepareStatement(query)) {
+        conn->BindParameter(1, username);
+        
+        std::vector<std::vector<std::string>> results;
+        if (conn->ExecutePreparedQuery(results)) {
+            dbPool.ReturnConnection(conn);
             
-            return true;
+            if (!results.empty() && results[0][1] == password) {
+                // Update cache
+                std::lock_guard<std::mutex> lock(m_authCacheMutex);
+                AuthCache cache;
+                cache.passwordHash = password;
+                cache.accountId = std::stoul(results[0][0]);
+                cache.accessLevel = std::stoul(results[0][2]);
+                cache.lastAccess = std::chrono::steady_clock::now();
+                m_authCache[username] = cache;
+                
+                return true;
+            }
         }
     }
     
+    dbPool.ReturnConnection(conn);
     return false;
 }
 
