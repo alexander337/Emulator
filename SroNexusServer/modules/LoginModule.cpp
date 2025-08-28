@@ -33,8 +33,10 @@ void LoginModule::Start() {
     
     // Start accepting connections
     Execute(false); // Don't run io_service here, main will handle it
-    
-    // Run io_service in a separate thread
+}
+
+void LoginModule::Run() {
+    // Run io_service - called from thread in main
     m_io_service.run();
 }
 

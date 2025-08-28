@@ -87,9 +87,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Start modules in separate threads
-    std::thread loginThread([&login]() { login.Start(); });
-    std::thread gameThread([&game]() { game.Start(); });
+    // Start modules (sets up acceptors)
+    login.Start();
+    game.Start();
+    
+    // Run io_services in separate threads
+    std::thread loginThread([&login]() { login.Run(); });
+    std::thread gameThread([&game]() { game.Run(); });
     
     // Give threads time to start
     Sleep(100);

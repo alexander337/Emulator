@@ -15,6 +15,7 @@ public:
 
     bool Initialize(int port);
     void Start();
+    void Run();
     void Stop();
 
 protected:
