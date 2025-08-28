@@ -8,12 +8,18 @@ if (WIN32)
     file(GLOB SRONEXUS_SERVER_SRC
         main.cpp
         modules/*.cpp
+        db/*.cpp
     )
+    
+    include_directories(${ESRO_SRNL_SOURCE_DIR}/include)
+    include_directories(${ESRO_EPL_SOURCE_DIR}/include)
+    include_directories(${ESRO_SOL_SOURCE_DIR}/include)
+    include_directories(${ESRO_BLOWFISH_SOURCE_DIR}/include)
+    
     add_executable(SroNexusServer ${SRONEXUS_SERVER_SRC})
 
-    # Initially do not link DB libraries; we will add ODBC in a later PR.
-    # Link only C++ runtime for now. We can link SRNL/EPL/SOL once modules start using them.
-    # target_link_libraries(SroNexusServer SRNL EPL SOL)
+    # Link with SRNL/EPL/SOL for module wiring and ODBC for SQL Server
+    target_link_libraries(SroNexusServer SRNL EPL SOL Blowfish odbc32 boost_system boost_thread)
 
     # Install executable and default config
     install(TARGETS SroNexusServer RUNTIME DESTINATION bin)

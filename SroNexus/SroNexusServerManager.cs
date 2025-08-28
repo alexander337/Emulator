@@ -252,9 +252,9 @@ namespace SroNexus
                         _logger.Error("[SroNexusServer] {Error}", e.Data);
                 };
 
-                _masterServerProcess.Start();
-                _masterServerProcess.BeginOutputReadLine();
-                _masterServerProcess.BeginErrorReadLine();
+                _monolithProcess.Start();
+                _monolithProcess.BeginOutputReadLine();
+                _monolithProcess.BeginErrorReadLine();
 
                 _logger.Information("SroNexusServer started with PID {PID}", _monolithProcess.Id);
                 return await Task.FromResult(true);
