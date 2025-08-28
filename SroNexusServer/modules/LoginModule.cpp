@@ -1,87 +1,244 @@
 #include "LoginModule.hpp"
+#include "../db/SqlServerPool.hpp"
 #include <packet_authentication.hpp>
 #include <opcodes_global_client.hpp>
 #include <opcodes_global_server.hpp>
+#include <chrono>
+#include <sstream>
 
-LoginModule::LoginModule() : srv::IServer() {
-    m_running = false;
+LoginModule::LoginModule() : sro::ModuleBase("Login") {
 }
 
 LoginModule::~LoginModule() {
     Stop();
 }
 
-bool LoginModule::Initialize(int port) {
-    m_port = port;
-    m_locale = 0; // Default locale
-    m_client_version = 0; // Will be set by client
-    m_is_encryption_active = true;
-    m_connection_timeout = 30;
-    m_connection_max_count = 1000;
+bool LoginModule::OnModuleInitialize() {
+    LogInfo("Initializing Login Module for Gateway+Master functionality");
     
-    std::map<std::string, std::string> config;
-    config["Port"] = std::to_string(port);
+    // Load server list from configuration or database
+    LoadServerList();
     
-    return srv::IServer::Initialize(config);
-}
-
-void LoginModule::Start() {
-    if (m_running) return;
+    // Initialize authentication cache
+    m_authCache.clear();
     
-    m_running = true;
-    std::cout << "[LoginModule] Starting on port " << m_port << std::endl;
-    
-    // Start accepting connections
-    Execute(false); // Don't run io_service here, main will handle it
-}
-
-void LoginModule::Run() {
-    // Run io_service - called from thread in main
-    m_io_service.run();
-}
-
-void LoginModule::Stop() {
-    if (!m_running) return;
-    
-    m_running = false;
-    std::cout << "[LoginModule] Stopping..." << std::endl;
-    
-    srv::IServer::Stop();
-    
-    std::cout << "[LoginModule] Stopped" << std::endl;
-}
-
-bool LoginModule::OnInitialize() {
-    std::cout << "[LoginModule] Initialized for Gateway+Master functionality" << std::endl;
     return true;
 }
 
-void LoginModule::OnConfigure(const std::map<std::string,std::string>& config_entries) {
-    auto it = config_entries.find("Port");
-    if (it != config_entries.end()) {
-        m_port = std::stoi(it->second);
+void LoginModule::OnModuleConfigure(const std::map<std::string,std::string>& config) {
+    // Module-specific configuration
+    auto it = config.find("MaxAuthCacheSize");
+    if (it != config.end()) {
+        // Configure auth cache size
+        LogInfo("Auth cache configured");
     }
 }
 
-void LoginModule::OnRemoveConnection(const uint32_t ID) {
-    std::cout << "[LoginModule] Connection " << ID << " removed" << std::endl;
+void LoginModule::CreateConnection() {
+    // Check connection throttling
+    if (m_throttlingEnabled) {
+        // Implement rate limiting
+        if (GetActiveConnectionCount() >= m_connection_max_count) {
+            LogWarning("Connection limit reached, rejecting new connection");
+            return;
+        }
+    }
+    
+    m_pending_conn = std::make_shared<LoginConnection>(++m_counter, m_io_service, this);
+    
+    if (m_metricsEnabled) {
+        m_metrics.totalConnections++;
+        m_metrics.activeConnections++;
+    }
 }
 
-void LoginModule::CreateConnection() {
-    m_pending_conn = std::make_shared<LoginConnection>(++m_counter, m_io_service, this);
+void LoginModule::LoadServerList() {
+    // In production, load from database
+    // For now, add a default game server
+    ServerInfo gameServer;
+    gameServer.id = 1;
+    gameServer.name = "SroNexus Game Server";
+    gameServer.ip = "127.0.0.1";
+    gameServer.port = 15780;
+    gameServer.currentUsers = 0;
+    gameServer.maxUsers = 5000;
+    gameServer.isOnline = true;
+    
+    std::lock_guard<std::mutex> lock(m_serverMutex);
+    m_servers[gameServer.id] = gameServer;
+    
+    LogInfo("Loaded " + std::to_string(m_servers.size()) + " game servers");
+}
+
+void LoginModule::UpdateServerStatus(uint16_t serverId, uint16_t currentUsers, bool isOnline) {
+    std::lock_guard<std::mutex> lock(m_serverMutex);
+    
+    auto it = m_servers.find(serverId);
+    if (it != m_servers.end()) {
+        it->second.currentUsers = currentUsers;
+        it->second.isOnline = isOnline;
+        
+        LogInfo("Updated server " + std::to_string(serverId) + 
+                " - Users: " + std::to_string(currentUsers) + 
+                " Online: " + (isOnline ? "Yes" : "No"));
+    }
+}
+
+bool LoginModule::ValidateCredentials(const std::string& username, const std::string& password) {
+    // Check auth cache first
+    {
+        std::lock_guard<std::mutex> lock(m_authCacheMutex);
+        auto it = m_authCache.find(username);
+        if (it != m_authCache.end()) {
+            auto now = std::chrono::steady_clock::now();
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.lastAccess).count();
+            
+            // Cache valid for 5 minutes
+            if (age < 300 && it->second.passwordHash == password) {
+                it->second.lastAccess = now;
+                return true;
+            }
+        }
+    }
+    
+    // Query database
+    auto& dbPool = db::SqlServerPool::Instance();
+    std::vector<std::vector<std::string>> results;
+    
+    std::stringstream query;
+    query << "SELECT id, password, access_level FROM accounts WHERE username = '" 
+          << username << "'";
+    
+    if (dbPool.ExecuteQuery(query.str(), results)) {
+        if (!results.empty() && results[0][1] == password) {
+            // Update cache
+            std::lock_guard<std::mutex> lock(m_authCacheMutex);
+            AuthCache cache;
+            cache.passwordHash = password;
+            cache.accountId = std::stoul(results[0][0]);
+            cache.accessLevel = std::stoul(results[0][2]);
+            cache.lastAccess = std::chrono::steady_clock::now();
+            m_authCache[username] = cache;
+            
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 // LoginConnection implementation
 LoginConnection::LoginConnection(uint32_t id, boost::asio::io_service& io_service, srv::IServer* srv)
-    : srv::IConnection(id, io_service, srv) {
+    : srv::IConnection(id, io_service, srv)
+    , m_state(State::HANDSHAKE)
+    , m_accountId(0)
+    , m_accessLevel(0)
+    , m_failedLoginAttempts(0)
+    , m_isBlocked(false) {
     
-    // Set up initial handshake state
-    // This would typically set up state machines for:
-    // - Handshake
-    // - Version check
-    // - Login authentication
-    // - Server list/shard selection
+    m_connectTime = std::chrono::steady_clock::now();
+    
+    // Set up initial handshake
+    SendHandshakeResponse();
 }
 
 LoginConnection::~LoginConnection() {
+}
+
+void LoginConnection::SetState(State newState) {
+    m_state = newState;
+}
+
+void LoginConnection::OnHandshakeRequest(const uint8_t* data, size_t length) {
+    if (m_state != State::HANDSHAKE) {
+        return;
+    }
+    
+    // Process handshake
+    SendHandshakeResponse();
+    SetState(State::VERSION_CHECK);
+}
+
+void LoginConnection::OnVersionCheck(const uint8_t* data, size_t length) {
+    if (m_state != State::VERSION_CHECK) {
+        return;
+    }
+    
+    // Extract version from packet
+    uint32_t clientVersion = 0; // Parse from data
+    
+    // Check if version is acceptable
+    bool versionOk = true; // Implement version check
+    
+    SendVersionResponse(versionOk);
+    
+    if (versionOk) {
+        SetState(State::LOGIN_AUTH);
+    } else {
+        SetState(State::DISCONNECTED);
+    }
+}
+
+void LoginConnection::OnLoginRequest(const uint8_t* data, size_t length) {
+    if (m_state != State::LOGIN_AUTH) {
+        return;
+    }
+    
+    if (m_isBlocked) {
+        SendLoginResponse(0x02); // Account blocked
+        return;
+    }
+    
+    // Parse username and password from packet
+    std::string username, password;
+    // ... parsing logic ...
+    
+    LoginModule* module = static_cast<LoginModule*>(m_server);
+    if (module->ValidateCredentials(username, password)) {
+        m_username = username;
+        SendLoginResponse(0x01); // Success
+        SetState(State::SERVER_SELECT);
+        SendServerList();
+    } else {
+        m_failedLoginAttempts++;
+        if (m_failedLoginAttempts >= 3) {
+            m_isBlocked = true;
+            SendLoginResponse(0x02); // Account blocked
+            SetState(State::DISCONNECTED);
+        } else {
+            SendLoginResponse(0x03); // Invalid credentials
+        }
+    }
+}
+
+void LoginConnection::OnServerSelectRequest(const uint8_t* data, size_t length) {
+    if (m_state != State::SERVER_SELECT) {
+        return;
+    }
+    
+    // Parse selected server ID
+    uint16_t serverId = 0; // Parse from data
+    
+    SendTransferInfo(serverId);
+    SetState(State::TRANSFER_READY);
+}
+
+void LoginConnection::SendHandshakeResponse() {
+    // Send handshake response packet
+}
+
+void LoginConnection::SendVersionResponse(bool accepted) {
+    // Send version check response
+}
+
+void LoginConnection::SendLoginResponse(uint8_t result) {
+    // Send login result
+}
+
+void LoginConnection::SendServerList() {
+    // Send list of available game servers
+}
+
+void LoginConnection::SendTransferInfo(uint16_t serverId) {
+    // Send transfer information for selected server
 }
