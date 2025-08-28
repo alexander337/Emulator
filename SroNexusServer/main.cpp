@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cctype>
+#include <thread>
 #include <windows.h>
 
 #include "modules/LoginModule.hpp"
 #include "modules/GameModule.hpp"
+#include "db/SqlServerPool.hpp"
 
 // Minimal JSON parser for config: expects keys LoginPort and GamePort as integers
 static bool read_config_json(const std::string& filename, int& loginPort, int& gamePort) {
@@ -85,11 +87,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Start modules (non-blocking stubs for now)
-    login.Start();
-    game.Start();
+    // Start modules in separate threads
+    std::thread loginThread([&login]() { login.Start(); });
+    std::thread gameThread([&game]() { game.Start(); });
+    
+    // Give threads time to start
+    Sleep(100);
 
     std::cout << "SroNexusServer is running." << std::endl;
+    std::cout << "Login server on port " << loginPort << std::endl;
+    std::cout << "Game server on port " << gamePort << std::endl;
+    
     // Keep process alive when launched headless from the manager
     Sleep(INFINITE);
 

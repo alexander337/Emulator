@@ -1,31 +1,37 @@
 #pragma once
 #include <string>
 #include <iostream>
+#include <memory>
+#include <boost/asio.hpp>
+#include <server_interface.hpp>
+#include <server_connection_interface.hpp>
+#include <server_state_handshake_interface.hpp>
 
-class LoginModule {
+class LoginConnection;
+
+class LoginModule : public srv::IServer {
 public:
-    LoginModule() : m_port(0), m_running(false) {}
+    LoginModule();
+    virtual ~LoginModule();
 
-    bool Initialize(int port) {
-        m_port = port;
-        // TODO: wire Gateway+Master logic here (SRNL/EPL), Windows-only
-        return true;
-    }
+    bool Initialize(int port);
+    void Start();
+    void Stop();
 
-    void Start() {
-        m_running = true;
-        std::cout << "[LoginModule] Starting on port " << m_port << std::endl;
-        // TODO: start acceptors and state machines
-    }
-
-    void Stop() {
-        if (!m_running) return;
-        m_running = false;
-        std::cout << "[LoginModule] Stopped" << std::endl;
-        // TODO: stop io_service, close sockets
-    }
+protected:
+    // IServer overrides
+    virtual bool OnInitialize() override;
+    virtual void OnConfigure(const std::map<std::string,std::string>& config_entries) override;
+    virtual void OnRemoveConnection(const uint32_t ID) override;
+    virtual void CreateConnection() override;
 
 private:
-    int m_port;
     bool m_running;
+};
+
+// Login connection handling Gateway+Master logic
+class LoginConnection : public srv::IConnection {
+public:
+    LoginConnection(uint32_t id, boost::asio::io_service& io_service, srv::IServer* srv);
+    virtual ~LoginConnection();
 };
