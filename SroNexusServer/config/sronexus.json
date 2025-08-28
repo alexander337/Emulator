@@ -1,4 +1,12 @@
 {
   "LoginPort": 15779,
-  "GamePort": 15780
+  "GamePort": 15780,
+  "Database": {
+    "Server": "localhost",
+    "Database": "SRO_VT_SHARD",
+    "Authentication": "SQL",
+    "Username": "",
+    "Password": "",
+    "TrustServerCertificate": true
+  }
 }
