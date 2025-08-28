@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 
@@ -20,6 +21,8 @@ namespace SroNexus
         private Process? _agentServerProcess;
         private Process? _gatewayServerProcess;
         private Process? _masterServerProcess;
+        private Process? _monolithProcess;
+        private bool _isMonolithMode = false;
         
         private readonly Dictionary<string, bool> _features = new();
         private bool _isRunning = false;
@@ -131,14 +134,45 @@ namespace SroNexus
         }
 
         /// <summary>
-        /// Start all eSRO servers
+        /// Start servers (prefer unified SroNexusServer if available)
         /// </summary>
         public async Task<bool> StartAllServers()
         {
             try
             {
-                _logger.Information("Starting all eSRO servers...");
+                _logger.Information("Starting servers...");
                 
+                // Prefer the new unified monolith if present
+                // Try dev layout first: ../SroNexusServer/SroNexusServer.exe
+                var monolithPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "SroNexusServer", "SroNexusServer.exe");
+                // Fallback to installed layout: BaseDirectory/SroNexusServer.exe
+                if (!File.Exists(monolithPath))
+                {
+                    var altMonolith = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SroNexusServer.exe");
+                    if (File.Exists(altMonolith))
+                        monolithPath = altMonolith;
+                }
+                if (File.Exists(monolithPath))
+                {
+                    if (!await StartMonolith(monolithPath))
+                    {
+                        _logger.Warning("Monolith failed to start. Falling back to legacy servers.");
+                    }
+                    else
+                    {
+                        _isMonolithMode = true;
+                        _isRunning = true;
+                        _logger.Information("SroNexusServer monolith started successfully!");
+                        
+                        // Apply feature configurations
+                        await ApplyFeatureConfigurations();
+                        return true;
+                    }
+                }
+
+                // Fallback to legacy tri-server startup
+                _logger.Warning("SroNexusServer.exe not found. Falling back to legacy servers.");
+
                 // Start MasterServer first
                 if (!await StartMasterServer())
                 {
@@ -167,7 +201,7 @@ namespace SroNexus
                 }
                 
                 _isRunning = true;
-                _logger.Information("All servers started successfully!");
+                _logger.Information("All servers started successfully (legacy mode).");
                 
                 // Apply feature configurations
                 await ApplyFeatureConfigurations();
@@ -177,6 +211,57 @@ namespace SroNexus
             catch (Exception ex)
             {
                 _logger.Error(ex, "Error starting servers");
+                return false;
+            }
+        }
+
+        private async Task<bool> StartMonolith(string exePath)
+        {
+            try
+            {
+                // Compute config relative to the exe: ../SroNexusServer/config/sronexus.json
+                var configPath = Path.Combine(Path.GetDirectoryName(exePath)!, "config", "sronexus.json");
+                if (!File.Exists(configPath))
+                {
+                    _logger.Warning("Config not found at {Path}. The server will use defaults.", configPath);
+                }
+
+                _monolithProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = exePath,
+                        Arguments = File.Exists(configPath) ? $"\"{configPath}\"" : "",
+                        WorkingDirectory = Path.GetDirectoryName(exePath),
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                _monolithProcess.OutputDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        _logger.Debug("[SroNexusServer] {Output}", e.Data);
+                };
+
+                _monolithProcess.ErrorDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        _logger.Error("[SroNexusServer] {Error}", e.Data);
+                };
+
+                _monolithProcess.Start();
+                _monolithProcess.BeginOutputReadLine();
+                _monolithProcess.BeginErrorReadLine();
+
+                _logger.Information("SroNexusServer started with PID {PID}", _monolithProcess.Id);
+                return await Task.FromResult(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to start SroNexusServer");
                 return false;
             }
         }
@@ -372,6 +457,22 @@ namespace SroNexus
             {
                 _logger.Information("Stopping all servers...");
                 
+                if (_isMonolithMode)
+                {
+                    if (_monolithProcess != null && !_monolithProcess.HasExited)
+                    {
+                        _monolithProcess.Kill();
+                        await _monolithProcess.WaitForExitAsync();
+                        _monolithProcess.Dispose();
+                        _monolithProcess = null;
+                        _logger.Information("SroNexusServer stopped");
+                    }
+                    _isMonolithMode = false;
+                    _isRunning = false;
+                    _logger.Information("All servers stopped");
+                    return;
+                }
+
                 // Stop AgentServer
                 if (_agentServerProcess != null && !_agentServerProcess.HasExited)
                 {
@@ -427,6 +528,9 @@ namespace SroNexus
         /// </summary>
         public bool AreServersRunning()
         {
+            if (_isMonolithMode)
+                return _isRunning && _monolithProcess != null && !_monolithProcess.HasExited;
+
             return _isRunning && 
                    _masterServerProcess != null && !_masterServerProcess.HasExited &&
                    _gatewayServerProcess != null && !_gatewayServerProcess.HasExited &&
@@ -438,6 +542,17 @@ namespace SroNexus
         /// </summary>
         public ServerStatus GetServerStatus()
         {
+            if (_isMonolithMode)
+            {
+                return new ServerStatus
+                {
+                    MonolithRunning = _monolithProcess != null && !_monolithProcess.HasExited,
+                    MonolithPID = _monolithProcess?.Id ?? 0,
+                    EnabledFeatures = _features.Count(f => f.Value),
+                    TotalFeatures = _features.Count
+                };
+            }
+
             return new ServerStatus
             {
                 MasterServerRunning = _masterServerProcess != null && !_masterServerProcess.HasExited,
@@ -481,12 +596,19 @@ namespace SroNexus
 
     public class ServerStatus
     {
+        // Monolith mode
+        public bool MonolithRunning { get; set; }
+        public int MonolithPID { get; set; }
+
+        // Legacy mode
         public bool MasterServerRunning { get; set; }
         public bool GatewayServerRunning { get; set; }
         public bool AgentServerRunning { get; set; }
         public int MasterServerPID { get; set; }
         public int GatewayServerPID { get; set; }
         public int AgentServerPID { get; set; }
+
+        // Features
         public int EnabledFeatures { get; set; }
         public int TotalFeatures { get; set; }
     }
